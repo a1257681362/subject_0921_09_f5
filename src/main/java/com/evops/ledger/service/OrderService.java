@@ -3,6 +3,9 @@ package com.evops.ledger.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.evops.common.BusinessException;
+import com.evops.credit.entity.Customer;
+import com.evops.credit.service.CreditOccupancyService;
+import com.evops.credit.support.SecurityHelper;
 import com.evops.ledger.LedgerEnums;
 import com.evops.ledger.dto.ActionRequest;
 import com.evops.ledger.dto.OrderCreateRequest;
@@ -44,20 +47,27 @@ public class OrderService {
     private final OrderEventMapper eventMapper;
     private final OrderReceiptMapper receiptMapper;
     private final SiteMapper siteMapper;
+    private final CreditOccupancyService creditOccupancyService;
     private final ObjectMapper objectMapper;
 
     public OrderService(PostingOrderMapper orderMapper, SlotBookingMapper slotMapper,
                         OrderEventMapper eventMapper, OrderReceiptMapper receiptMapper,
-                        SiteMapper siteMapper, ObjectMapper objectMapper) {
+                        SiteMapper siteMapper, CreditOccupancyService creditOccupancyService,
+                        ObjectMapper objectMapper) {
         this.orderMapper = orderMapper;
         this.slotMapper = slotMapper;
         this.eventMapper = eventMapper;
         this.receiptMapper = receiptMapper;
         this.siteMapper = siteMapper;
+        this.creditOccupancyService = creditOccupancyService;
         this.objectMapper = objectMapper;
     }
 
-    /** 上刊：单号唯一、按周占档（同点位同周冲突拒绝）、归属月按发生日固化。 */
+    /**
+     * 上刊：单号唯一、按周占档（同点位同周冲突拒绝）、归属月按发生日固化。
+     * F5 起强制挂客户+占用金额：先校验授信（冻结/越权/余额不够都拦在提交口），
+     * 占档期成功后占额度，同一事务，任一步失败整体回滚。
+     */
     @Transactional(rollbackFor = Exception.class)
     public PostingOrder createPosting(OrderCreateRequest request) {
         Site site = siteMapper.selectOne(new LambdaQueryWrapper<Site>()
@@ -69,6 +79,10 @@ public class OrderService {
         LocalDate weekStart = WeekRanges.mondayOf(occurDate);
         LocalDate weekEnd = WeekRanges.sundayOf(occurDate);
         String operator = Operators.resolve(request.getOperatorName());
+        String identity = SecurityHelper.currentIdentity(operator);
+        // 授信前置校验：客户存在、额度未冻结、销售限名下客户、占用金额为正
+        Customer customer = creditOccupancyService.preflight(
+                request.getCustomerNo(), request.getOccupyAmount(), identity);
 
         PostingOrder order = new PostingOrder();
         order.setOrderNo(generateOrderNo());
@@ -84,6 +98,10 @@ public class OrderService {
         order.setVersionNo(1);
         order.setOperatorName(operator);
         order.setRemark(request.getRemark());
+        // 客户与占用金额随单固化，之后客户改资料不影响已开单
+        order.setCustomerId(customer.getId());
+        order.setCustomerNo(customer.getCustomerNo());
+        order.setOccupyAmount(request.getOccupyAmount().setScale(2, java.math.RoundingMode.HALF_UP));
         try {
             orderMapper.insert(order);
         } catch (DuplicateKeyException e) {
@@ -94,9 +112,13 @@ public class OrderService {
         orderMapper.updateById(order);
 
         occupySlot(site.getId(), weekStart, weekEnd, order);
+        // 占额度：余额不够在这里拦下，整张单随事务回滚
+        creditOccupancyService.occupy(customer, request.getOccupyAmount(), order);
 
         recordEvent(order, LedgerEnums.EVENT_CREATE, occurDate, operator, null,
-                "开单上刊，画面「" + order.getCreativeName() + "」挂起");
+                "开单上刊，画面「" + order.getCreativeName() + "」挂起；客户 "
+                        + customer.getCustomerName() + "（" + customer.getCustomerNo() + "）占用额度 "
+                        + order.getOccupyAmount().toPlainString());
         return order;
     }
 
@@ -135,6 +157,8 @@ public class OrderService {
         original.setClosedTime(LocalDateTime.now());
         orderMapper.updateById(original);
         releaseSlot(original);
+        // 对冲即撤单：释放该单剩余未核销的占用（改错不结钱）
+        creditOccupancyService.releaseByOffset(original, reason);
         recordEvent(original, LedgerEnums.EVENT_OFFSET, occurDate, operator, null,
                 "原单已对冲，补对冲单，原因：" + reason);
 

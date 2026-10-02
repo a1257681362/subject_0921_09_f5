@@ -67,6 +67,22 @@
 - **计价逻辑收到一处**：所有金额只由 `PricingEngine.price(提交日, 报价行)` 算出，报价提交与报价试算共用，接口层不算一分钱。
 - **财务随查随拉的阶梯对照表**：`GET /api/rate-cards/years/{year}` 拉年度当前版本的档位+点位价全量；`.../tiers/export` 导出 CSV（带 BOM，含年份、版本、状态、税率、周数区间、档位比例、中文折扣）。
 
+## F5：客户授信与回款核销（f5-credit-payment-1）
+
+老客户先上刊后结钱，但额度和回款不能记在销售的小本本上：客户建档给信用额度，上刊占用、回款核销释放，全部落在系统里串起授信与回款凭证。
+
+业务口径：
+
+- **客户建档给信用额度**：客户名称唯一，重复建档存不进去；建档即给初始额度并记 **信用额度版本** v1（来源 INITIAL，前后值 0 → 初始额度）。归属销售记建档人（财务/系统可指定），**销售只能看/动自己名下的客户**，财务与系统角色看全部。
+- **信用额度状态**：`NORMAL 正常 / FROZEN 冻结`；冻结后新上刊占用被拦（回款核销照走），冻结/解冻仅财务/系统。
+- **上刊占用、余额不够拦在提交口**：上刊单强制挂客户+占用金额；开单先校验客户状态与归属（销售限名下），占档期成功后以守卫更新占额度（`占用+本次 ≤ 额度`，并发超占拦得住），任一环节失败整张单回滚。客户与占用金额随单固化。
+- **落架不释放、对冲才释放**：额度管的是客户还没结钱的总盘子——落架后占用继续挂着等回款；对冲（改错撤单）不结钱，剩余未核占用直接释放。
+- **回款登记后按单核销，部分回款分次核**：回款登记（仅财务/系统）记凭证号，归属月随回款日固化；核销逐行指定「单号+金额」，一笔回款可分次核多单、一单也可被多笔回款分次核；超单余额、超回款余额、跨客户核销都拦住。**核多少释放多少额度**，单核满置「已核销」。
+- **额度动一动要走审批**：调整申请（销售限名下客户，同一客户在途只准一条）→ 审批（仅财务/系统，**审批人不能是申请人**；目标额度低于当前占用会被拦）→ 通过即换版：旧版置 SUPERSEDED，新版记 ADJUST，**前后值都留着**，驳回留审批意见。
+- **月底每户占用明细**：`GET /api/credit/reports/occupancy?period=yyyy-MM` 每户额度/占用/可用 + 期内占用明细行（已核/未核分列），`.../occupancy/export` 导出 CSV（带 BOM）；财务拉全量，销售仅名下。
+
+角色账号：销售 `sales01 / sales02`、财务 `finance01`（密码同账号名）；`demo / bootstrap` 为 system 全能。账号统一登记在 `AppAccounts`，Shiro 认证与 service 层角色判断同源。
+
 ## 接口一览（均在 /api 下，除 health/login 外需登录）
 
 | 动作 | 接口 |
@@ -90,14 +106,20 @@
 | 刊例版本：草稿配置 / 详情 / 发布 / 作废 | `PUT /api/rate-cards/versions/{versionId}`、`GET /api/rate-cards/versions/{versionId}`、`POST .../publish`、`POST .../revoke` |
 | 财务阶梯对照表 / 导出 CSV | `GET /api/rate-cards/years/{year}`、`GET /api/rate-cards/years/{year}/tiers/export` |
 | 报价：试算 / 提交 / 详情 / 翻查 | `POST /api/quotes/preview`、`POST /api/quotes`、`GET /api/quotes/{quoteNo}`、`GET /api/quotes?customerName=&rateYear=&from=&to=` |
+| 客户建档 / 翻查（销售仅名下）/ 详情 | `POST /api/customers`、`GET /api/customers?keyword=&ownerSales=`、`GET /api/customers/{customerNo}` |
+| 信用额度状态：冻结 / 解冻（财务/系统） | `POST /api/customers/{customerNo}/freeze`、`/unfreeze` |
+| 信用额度版本翻查 / 占用明细翻查 | `GET /api/customers/{customerNo}/limit-versions`、`GET /api/customers/{customerNo}/occupancies` |
+| 额度调整：提交申请 / 审批单翻查 / 通过 / 驳回 | `POST /api/customers/{customerNo}/limit-applies`、`GET /api/credit/applies?status=`、`POST /api/credit/applies/{applyNo}/approve`、`/reject` |
+| 回款：登记 / 按单核销 / 详情 / 翻查 | `POST /api/payments`、`POST /api/payments/{paymentNo}/writeoff`、`GET /api/payments/{paymentNo}`、`GET /api/payments?customerNo=&period=` |
+| 月底每户占用明细 / 导出 CSV | `GET /api/credit/reports/occupancy?period=&customerNo=`、`GET /api/credit/reports/occupancy/export?...` |
 
-演示界面：启动后浏览器打开根路径 `/`（周例会演示用，九个页签覆盖全流程）。
+演示界面：启动后浏览器打开根路径 `/`（周例会演示用，十个页签覆盖全流程）。
 
 ## 启动
 
 1. 执行 `mvn -q -DskipTests compile` 验证骨架构建。
 2. 执行 `mvn spring-boot:run` 启动应用；Spring Boot 会自动执行 `src/main/resources/schema.sql`。
 3. H2 数据文件默认写入工作区 `data/evops`。如需修改路径，编辑 `application.yml` 中的 `jdbc:h2:file:` 连接串。
-4. 验证：`mvn test`（11 项底账口径测试 + 7 项素材转档测试 + 8 项坐标建档测试 + 13 项年度刊例计价测试，独立内存 H2）。
+4. 验证：`mvn test`（11 项底账口径测试 + 7 项素材转档测试 + 8 项坐标建档测试 + 13 项年度刊例计价测试 + 11 项授信回款测试，独立内存 H2）。
 
 表结构交付副本：`docs/schema/evops.sql`（容器内根目录 `../../docs/schema` 不可写，交付副本置于工作区内），应与 `src/main/resources/schema.sql` 保持一致。

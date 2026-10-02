@@ -65,7 +65,7 @@
   <label>用户名</label><input id="loginUser" value="demo">
   <label>密码</label><input id="loginPass" type="password" value="demo">
   <div class="actions"><button onclick="doLogin()">登录进入底账</button></div>
-  <p class="muted" style="margin-top:12px">演示账号 demo / demo，骨架账号 bootstrap / bootstrap</p>
+  <p class="muted" style="margin-top:12px">演示账号 demo / demo，骨架账号 bootstrap / bootstrap；销售 sales01 / sales02，财务 finance01（密码同账号名）</p>
 </div>
 
 <div id="app">
@@ -79,6 +79,7 @@
     <div class="tab" data-tab="asset">⑦ 素材转档</div>
     <div class="tab" data-tab="geo">⑧ 坐标建档与捞点</div>
     <div class="tab" data-tab="rate">⑨ 年度刊例与报价</div>
+    <div class="tab" data-tab="credit">⑩ 客户授信与回款</div>
   </div>
 
   <!-- 点位挂牌 -->
@@ -105,16 +106,18 @@
 
   <!-- 上刊 -->
   <div class="panel" id="panel-post">
-    <h3>开上刊单（画面挂到点位当周档期，状态挂起）</h3>
+    <h3>开上刊单（画面挂到点位当周档期，状态挂起；上刊即占用客户信用额度，余额不够拦在提交口）</h3>
     <div class="grid">
       <div><label>点位编号 *</label><input id="postSiteNo" placeholder="已挂牌的点位编号"></div>
       <div><label>画面名称 *</label><input id="postCreative" placeholder="如 中秋档主视觉"></div>
+      <div><label>客户编号 *</label><input id="postCustomerNo" placeholder="CU…（⑩ 页签建档）</div>
+      <div><label>占用金额 *</label><input id="postAmount" type="number" min="0.01" step="0.01" placeholder="该单占用的信用额度"></div>
       <div><label>上刊发生日（决定档期周/归属月）</label><input id="postDate" type="date"></div>
       <div><label>经手人（留空取登录人）</label><input id="postOperator"></div>
       <div class="span2"><label>备注</label><input id="postRemark"></div>
     </div>
     <div class="actions"><button onclick="createOrder()">开单上刊</button></div>
-    <p class="muted" style="margin-top:10px">单号由系统唯一生成（PO+序列）；同一点位同一周只能挂一张画面；归属月按发生日落死。</p>
+    <p class="muted" style="margin-top:10px">单号由系统唯一生成（PO+序列）；同一点位同一周只能挂一张画面；归属月按发生日落死。上刊占用额度、落架不释放（等回款核销）、对冲撤单才直接释放。</p>
   </div>
 
   <!-- 单据翻查与动作 -->
@@ -351,6 +354,99 @@
     <table id="quoteTable"></table>
     <div id="quoteDetail" style="margin-top:8px"></div>
   </div>
+
+  <!-- 客户授信与回款 -->
+  <div class="panel" id="panel-credit">
+    <h3>客户建档（建档即给信用额度，记 v1 初始版本；同名客户存不进去）</h3>
+    <div class="grid">
+      <div><label>客户名称 *</label><input id="cuName"></div>
+      <div><label>初始信用额度 *</label><input id="cuLimit" type="number" min="0" step="0.01"></div>
+      <div><label>归属销售（销售建档默认自己；财务/系统可指定）</label><input id="cuOwner"></div>
+      <div><label>联系方式</label><input id="cuContact"></div>
+      <div class="span2"><label>备注</label><input id="cuRemark"></div>
+      <div><label>经手人（留空取登录人）</label><input id="cuOperator"></div>
+    </div>
+    <div class="actions"><button onclick="createCustomer()">建档给额度</button></div>
+
+    <h3>客户翻查（销售只看自己名下；财务/系统看全部）</h3>
+    <div class="grid">
+      <div><label>名称/编号（模糊）</label><input id="qCuKw"></div>
+      <div><label>归属销售（财务/系统可用）</label><input id="qCuOwner"></div>
+      <div style="align-self:end"><button class="gray" onclick="loadCustomers()">翻查</button></div>
+    </div>
+    <table id="customerTable"></table>
+
+    <h3>客户操作（先点列表「选」填入客户编号）</h3>
+    <div class="grid">
+      <div><label>目标客户编号</label><input id="cuTarget"></div>
+      <div><label>原因/备注（冻结解冻用）</label><input id="cuReason"></div>
+      <div style="align-self:end;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="warn" onclick="freezeCustomer()">冻结额度</button>
+        <button onclick="unfreezeCustomer()">解冻</button>
+        <button class="gray" onclick="loadLimitVersions()">查额度版本</button>
+        <button class="gray" onclick="loadOccupancies()">查占用明细</button>
+      </div>
+    </div>
+    <div id="limitVersionBox" style="margin-top:8px"></div>
+    <div id="occupancyBox" style="margin-top:8px"></div>
+
+    <h3>额度调整（额度动一动要走审批，前后值都留版本）</h3>
+    <div class="grid">
+      <div><label>客户编号 *</label><input id="adjCustomer"></div>
+      <div><label>目标额度 *</label><input id="adjLimit" type="number" min="0" step="0.01"></div>
+      <div class="span2"><label>调整原因 *</label><input id="adjReason"></div>
+      <div><label>申请人（留空取登录人）</label><input id="adjOperator"></div>
+    </div>
+    <div class="actions">
+      <button onclick="applyLimit()">提交调整申请</button>
+      <button class="gray" onclick="loadApplies()">翻查审批单</button>
+    </div>
+    <div class="grid" style="margin-top:10px">
+      <div><label>审批单号（点列表「选」）</label><input id="apTarget"></div>
+      <div><label>审批意见</label><input id="apRemark"></div>
+      <div style="align-self:end;display:flex;gap:8px">
+        <button onclick="approveApply()">审批通过（换版）</button>
+        <button class="danger" onclick="rejectApply()">驳回</button>
+      </div>
+    </div>
+    <table id="applyTable"></table>
+
+    <h3>回款登记（财务/系统；归属月随回款日固化）</h3>
+    <div class="grid">
+      <div><label>客户编号 *</label><input id="pmCustomer"></div>
+      <div><label>回款金额 *</label><input id="pmAmount" type="number" min="0.01" step="0.01"></div>
+      <div><label>回款日期（留空=今天）</label><input id="pmDate" type="date"></div>
+      <div><label>凭证号（银行回单号）</label><input id="pmVoucher"></div>
+      <div><label>回款方式</label><input id="pmMethod" placeholder="对公转账 / 承兑"></div>
+      <div><label>经手人（留空取登录人）</label><input id="pmOperator"></div>
+    </div>
+    <div class="actions">
+      <button onclick="registerPayment()">登记回款</button>
+      <button class="gray" onclick="loadPayments()">翻查回款</button>
+    </div>
+    <table id="paymentTable"></table>
+
+    <h3>按单核销（一笔回款可分次核多单，一单也可被多笔回款分次核；核多少释放多少额度）</h3>
+    <div class="grid">
+      <div><label>回款单号 *（点列表「选」）</label><input id="woPayment"></div>
+      <div class="span2"><label>核销行（每行一条：单号:金额）</label>
+        <textarea id="woLines" rows="3" style="width:100%" placeholder="PO0000000001:4000&#10;PO0000000002:1500"></textarea></div>
+      <div><label>经手人（留空取登录人）</label><input id="woOperator"></div>
+    </div>
+    <div class="actions"><button onclick="doWriteoff()">核销</button></div>
+    <div id="writeoffBox" style="margin-top:8px"></div>
+
+    <h3>月底占用明细（财务拉全量、销售仅名下；每户额度/占用/可用 + 期内明细）</h3>
+    <div class="grid">
+      <div><label>归属月 yyyy-MM *</label><input id="rpPeriod" placeholder="2026-10"></div>
+      <div><label>客户编号（可选，指定只拉一户）</label><input id="rpCustomer"></div>
+      <div style="align-self:end;display:flex;gap:8px">
+        <button class="gray" onclick="loadOccupancyReport()">拉明细</button>
+        <button onclick="exportOccupancy()">导出 CSV</button>
+      </div>
+    </div>
+    <div id="reportBox" style="margin-top:8px"></div>
+  </div>
 </div>
 
 <script>
@@ -399,15 +495,17 @@ async function doLogin() {
 async function init() {
   // header 占位（登录后填充）
   document.body.insertAdjacentHTML('afterbegin',
-    '<header><h1>户外广告点位与上刊底账 <span class="muted" style="color:#c8d4e6">EVOPS f1·f2·f3·f4</span></h1><span class="who"></span></header>');
+    '<header><h1>户外广告点位与上刊底账 <span class="muted" style="color:#c8d4e6">EVOPS f1·f2·f3·f4·f5</span></h1><span class="who"></span></header>');
   document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
     document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
     document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
     t.classList.add('active');
     document.getElementById('panel-' + t.dataset.tab).classList.add('active');
     if (t.dataset.tab === 'rate') { loadRateCards(); }
+    if (t.dataset.tab === 'credit') { loadCustomers(); loadApplies(); loadPayments(); }
   });
   document.getElementById('calPeriod').value = new Date().toISOString().slice(0, 7);
+  document.getElementById('rpPeriod').value = new Date().toISOString().slice(0, 7);
   try { const me = await call('GET', '/me'); showApp(me.username); loadSites(); loadSpecs(); } catch (e) { showLogin(); }
 }
 
@@ -437,8 +535,10 @@ async function loadSites() {
 async function createOrder() {
   try {
     const d = await call('POST', '/orders', { siteNo: val('postSiteNo'), creativeName: val('postCreative'),
+      customerNo: val('postCustomerNo'), occupyAmount: val('postAmount'),
       occurDate: val('postDate'), operatorName: val('postOperator'), remark: val('postRemark') });
-    toast('上刊成功，单号 ' + d.orderNo + '，档期 ' + d.weekStart + ' 至 ' + d.weekEnd + '，归属月 ' + d.bizPeriod, true);
+    toast('上刊成功，单号 ' + d.orderNo + '，档期 ' + d.weekStart + ' 至 ' + d.weekEnd + '，归属月 ' + d.bizPeriod
+      + '，客户 ' + d.customerNo + ' 占用额度 ' + d.occupyAmount, true);
     document.getElementById('actOrderNo').value = d.orderNo;
   } catch (e) { toast(e.message); }
 }
@@ -1016,6 +1116,203 @@ function renderQuoteDetail(d) {
     + `<tr style="background:#eef4fb;font-weight:600"><td colspan="9">合计（默认含税）</td>
       <td>${money(q.totalExTax)}</td><td>${money(q.totalTax)}</td><td>含税 ${money(q.totalInclTax)}</td></tr></table>`;
   document.getElementById('quoteDetail').innerHTML = head + tbl;
+}
+
+// ---- 客户授信与回款（F5）----
+function creditTag(s) { return s === 'NORMAL' ? '<span class="tag success">正常</span>' : '<span class="tag offset">已冻结</span>'; }
+function occTag(s) {
+  return { OCCUPYING: '<span class="tag processing">占用中</span>', SETTLED: '<span class="tag success">已核销</span>',
+    RELEASED: '<span class="tag offset">已释放(对冲)</span>' }[s] || esc(s);
+}
+function applyTag(s) {
+  return { PENDING: '<span class="tag pending">待审批</span>', APPROVED: '<span class="tag success">已通过</span>',
+    REJECTED: '<span class="tag failed">已驳回</span>' }[s] || esc(s);
+}
+
+async function createCustomer() {
+  try {
+    const d = await call('POST', '/customers', { customerName: val('cuName'), creditLimit: val('cuLimit'),
+      ownerSales: val('cuOwner'), contact: val('cuContact'), remark: val('cuRemark'), operatorName: val('cuOperator') });
+    toast('建档成功，客户编号 ' + d.customerNo + '，初始额度 ' + d.creditLimit + '（记 v1 版本）', true);
+    ['cuName','cuLimit','cuContact','cuRemark'].forEach(i => document.getElementById(i).value = '');
+    loadCustomers();
+  } catch (e) { toast(e.message); }
+}
+
+async function loadCustomers() {
+  try {
+    const list = await call('GET', '/customers?keyword=' + encodeURIComponent(val('qCuKw')||'')
+      + '&ownerSales=' + encodeURIComponent(val('qCuOwner')||''));
+    document.getElementById('customerTable').innerHTML =
+      '<tr><th>编号</th><th>名称</th><th>归属销售</th><th>信用额度</th><th>已占用</th><th>可用</th><th>额度状态</th><th>版本</th><th></th></tr>'
+      + (list.map(v => `<tr><td>${esc(v.customer.customerNo)}</td><td>${esc(v.customer.customerName)}</td>
+        <td>${esc(v.customer.ownerSales)}</td><td>${money(v.customer.creditLimit)}</td>
+        <td>${money(v.customer.occupiedAmount)}</td><td><b>${money(v.availableAmount)}</b></td>
+        <td>${creditTag(v.customer.creditStatus)}</td><td>v${v.currentVersionNo || 1}</td>
+        <td><button class="sm gray" onclick="pickCustomer('${esc(v.customer.customerNo)}')">选</button></td></tr>`).join('')
+        || '<tr><td class="muted">名下暂无客户</td></tr>');
+  } catch (e) { toast(e.message); }
+}
+
+function pickCustomer(no) {
+  ['cuTarget','adjCustomer','pmCustomer','rpCustomer'].forEach(i => document.getElementById(i).value = no);
+  toast('已填入客户编号 ' + no, true);
+}
+
+async function freezeCustomer() {
+  try {
+    const d = await call('POST', '/customers/' + encodeURIComponent(val('cuTarget')) + '/freeze',
+      { reason: val('cuReason'), operatorName: val('cuOperator') });
+    toast('已冻结：' + d.customerName + '，新上刊将被拦截', true); loadCustomers();
+  } catch (e) { toast(e.message); }
+}
+async function unfreezeCustomer() {
+  try {
+    const d = await call('POST', '/customers/' + encodeURIComponent(val('cuTarget')) + '/unfreeze',
+      { reason: val('cuReason'), operatorName: val('cuOperator') });
+    toast('已解冻：' + d.customerName, true); loadCustomers();
+  } catch (e) { toast(e.message); }
+}
+
+async function loadLimitVersions() {
+  const no = val('cuTarget');
+  if (!no) { toast('请先选客户'); return; }
+  try {
+    const list = await call('GET', '/customers/' + encodeURIComponent(no) + '/limit-versions');
+    document.getElementById('limitVersionBox').innerHTML =
+      '<table><tr><th>版本</th><th>来源</th><th>调整前</th><th>调整后</th><th>状态</th><th>经办</th><th>审批人</th><th>审批时间</th><th>原因</th></tr>'
+      + list.map(v => `<tr><td>v${v.versionNo}</td><td>${v.source === 'INITIAL' ? '建档初始' : '调整审批'}</td>
+        <td>${money(v.limitBefore)}</td><td>${money(v.limitAfter)}</td>
+        <td>${v.status === 'EFFECTIVE' ? '<span class="tag success">生效中</span>' : '<span class="tag down">已被新版取代</span>'}</td>
+        <td>${esc(v.operatorName)}</td><td>${esc(v.approverName)}</td><td>${esc(v.approveTime)}</td><td>${esc(v.remark)}</td></tr>`).join('')
+      + '</table>';
+  } catch (e) { toast(e.message); }
+}
+
+async function loadOccupancies() {
+  const no = val('cuTarget');
+  if (!no) { toast('请先选客户'); return; }
+  try {
+    const list = await call('GET', '/customers/' + encodeURIComponent(no) + '/occupancies');
+    document.getElementById('occupancyBox').innerHTML =
+      '<table><tr><th>上刊单号</th><th>占用金额</th><th>已核销</th><th>未核销</th><th>状态</th><th>归属月</th><th>发生日</th><th>说明</th></tr>'
+      + (list.map(o => `<tr><td>${esc(o.orderNo)}</td><td>${money(o.amount)}</td><td>${money(o.settledAmount)}</td>
+        <td>${money(o.amount - o.settledAmount)}</td><td>${occTag(o.status)}</td>
+        <td>${esc(o.bizPeriod)}</td><td>${esc(o.occurDate)}</td><td>${esc(o.releaseNote)}</td></tr>`).join('')
+        || '<tr><td class="muted">暂无占用明细</td></tr>') + '</table>';
+  } catch (e) { toast(e.message); }
+}
+
+async function applyLimit() {
+  try {
+    const d = await call('POST', '/customers/' + encodeURIComponent(val('adjCustomer')) + '/limit-applies',
+      { limitAfter: val('adjLimit'), reason: val('adjReason'), operatorName: val('adjOperator') });
+    toast('已提交调整申请 ' + d.applyNo + '（' + d.limitBefore + ' → ' + d.limitAfter + '），待审批', true);
+    loadApplies();
+  } catch (e) { toast(e.message); }
+}
+
+async function loadApplies() {
+  try {
+    const list = await call('GET', '/credit/applies');
+    document.getElementById('applyTable').innerHTML =
+      '<tr><th>申请单号</th><th>客户ID</th><th>调整前</th><th>目标额度</th><th>原因</th><th>申请人</th><th>状态</th><th>审批人</th><th>审批意见</th><th></th></tr>'
+      + (list.map(a => `<tr><td>${esc(a.applyNo)}</td><td>${a.customerId}</td><td>${money(a.limitBefore)}</td>
+        <td>${money(a.limitAfter)}</td><td>${esc(a.reason)}</td><td>${esc(a.applicantName)}</td>
+        <td>${applyTag(a.status)}</td><td>${esc(a.approverName)}</td><td>${esc(a.approveRemark)}</td>
+        <td>${a.status === 'PENDING' ? `<button class="sm gray" onclick="pickApply('${esc(a.applyNo)}')">选</button>` : ''}</td></tr>`).join('')
+        || '<tr><td class="muted">暂无审批单</td></tr>');
+  } catch (e) { toast(e.message); }
+}
+function pickApply(no) { document.getElementById('apTarget').value = no; toast('已填入审批单号 ' + no, true); }
+
+async function approveApply() {
+  try {
+    const d = await call('POST', '/credit/applies/' + encodeURIComponent(val('apTarget')) + '/approve',
+      { remark: val('apRemark') });
+    toast('已审批通过并换版：' + d.applyNo + '，新额度 ' + d.limitAfter, true);
+    loadApplies(); loadCustomers();
+  } catch (e) { toast(e.message); }
+}
+async function rejectApply() {
+  try {
+    const d = await call('POST', '/credit/applies/' + encodeURIComponent(val('apTarget')) + '/reject',
+      { remark: val('apRemark') });
+    toast('已驳回：' + d.applyNo, true); loadApplies();
+  } catch (e) { toast(e.message); }
+}
+
+async function registerPayment() {
+  try {
+    const d = await call('POST', '/payments', { customerNo: val('pmCustomer'), amount: val('pmAmount'),
+      receivedDate: val('pmDate'), voucherNo: val('pmVoucher'), method: val('pmMethod'), operatorName: val('pmOperator') });
+    toast('回款已登记：' + d.paymentNo + '，金额 ' + d.amount + '，归属月 ' + d.bizPeriod, true);
+    loadPayments();
+  } catch (e) { toast(e.message); }
+}
+
+async function loadPayments() {
+  try {
+    const list = await call('GET', '/payments');
+    document.getElementById('paymentTable').innerHTML =
+      '<tr><th>回款单号</th><th>客户编号</th><th>金额</th><th>已核销</th><th>未核销</th><th>回款日</th><th>归属月</th><th>凭证号</th><th>经手人</th><th></th></tr>'
+      + (list.map(p => `<tr><td>${esc(p.paymentNo)}</td><td>${esc(p.customerNo)}</td><td>${money(p.amount)}</td>
+        <td>${money(p.allocatedAmount)}</td><td><b>${money(p.amount - p.allocatedAmount)}</b></td>
+        <td>${esc(p.receivedDate)}</td><td>${esc(p.bizPeriod)}</td><td>${esc(p.voucherNo)}</td><td>${esc(p.operatorName)}</td>
+        <td><button class="sm gray" onclick="pickPayment('${esc(p.paymentNo)}')">选</button></td></tr>`).join('')
+        || '<tr><td class="muted">暂无回款单</td></tr>');
+  } catch (e) { toast(e.message); }
+}
+function pickPayment(no) { document.getElementById('woPayment').value = no; toast('已填入回款单号 ' + no, true); }
+
+async function doWriteoff() {
+  const no = val('woPayment');
+  if (!no) { toast('请先选回款单'); return; }
+  const lines = (document.getElementById('woLines').value || '').split('\n')
+    .map(s => s.trim()).filter(s => s).map(s => {
+      const parts = s.split(':');
+      if (parts.length !== 2 || !parts[0].trim() || !parts[1].trim()) throw new Error('核销行格式应为 单号:金额，问题行：' + s);
+      return { orderNo: parts[0].trim(), amount: parts[1].trim() };
+    });
+  if (!lines.length) { toast('请填核销行（单号:金额，每行一条）'); return; }
+  try {
+    const d = await call('POST', '/payments/' + encodeURIComponent(no) + '/writeoff',
+      { lines, operatorName: val('woOperator') });
+    document.getElementById('writeoffBox').innerHTML =
+      '<table><tr><th>回款单号</th><th>核销上刊单</th><th>本次核销金额</th><th>经手人</th><th>时间</th></tr>'
+      + d.writeoffs.map(w => `<tr><td>${esc(w.paymentNo)}</td><td>${esc(w.orderNo)}</td>
+        <td>${money(w.amount)}</td><td>${esc(w.operatorName)}</td><td>${esc(w.createTime)}</td></tr>`).join('') + '</table>'
+      + '<p class="muted">该回款未核销余额：' + money(d.unallocatedAmount) + '</p>';
+    toast('核销完成，额度已按核销额释放', true);
+    loadPayments(); loadCustomers();
+  } catch (e) { toast(e.message); }
+}
+
+async function loadOccupancyReport() {
+  try {
+    const d = await call('GET', '/credit/reports/occupancy?period=' + encodeURIComponent(val('rpPeriod')||'')
+      + '&customerNo=' + encodeURIComponent(val('rpCustomer')||''));
+    document.getElementById('reportBox').innerHTML = d.customers.map(row => {
+      const c = row.customer;
+      const head = `<h3 style="margin-top:14px">${esc(c.customerName)}（${esc(c.customerNo)}）
+        <span class="muted">归属 ${esc(c.ownerSales)} ｜ 额度 ${money(c.creditLimit)} ｜ 当前占用 ${money(c.occupiedAmount)}
+        ｜ 可用 ${money(row.availableAmount)} ｜ 期内占用 ${money(row.periodOccupied)} / 已核 ${money(row.periodSettled)}
+        / 未核 ${money(row.periodOutstanding)}</span></h3>`;
+      const tbl = '<table><tr><th>上刊单号</th><th>占用金额</th><th>已核销</th><th>未核销</th><th>状态</th><th>发生日</th><th>说明</th></tr>'
+        + (row.lines.map(o => `<tr><td>${esc(o.orderNo)}</td><td>${money(o.amount)}</td><td>${money(o.settledAmount)}</td>
+          <td>${money(o.amount - o.settledAmount)}</td><td>${occTag(o.status)}</td>
+          <td>${esc(o.occurDate)}</td><td>${esc(o.releaseNote)}</td></tr>`).join('')
+          || '<tr><td class="muted">该月无占用明细</td></tr>') + '</table>';
+      return head + tbl;
+    }).join('') || '<p class="muted">名下暂无客户</p>';
+  } catch (e) { toast(e.message); }
+}
+
+function exportOccupancy() {
+  const period = val('rpPeriod');
+  if (!period) { toast('请填归属月'); return; }
+  window.open(API + '/credit/reports/occupancy/export?period=' + encodeURIComponent(period)
+    + '&customerNo=' + encodeURIComponent(val('rpCustomer')||''), '_blank');
 }
 
 init();

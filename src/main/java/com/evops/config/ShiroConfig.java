@@ -21,9 +21,8 @@ public class ShiroConfig {
     @Bean
     public Realm localRealm() {
         SimpleAccountRealm realm = new SimpleAccountRealm();
-        realm.addAccount("bootstrap", "bootstrap", "system");
-        // 周例会演示账号
-        realm.addAccount("demo", "demo", "system");
+        // 账号统一在 AppAccounts 登记（system 全能 / sales 仅名下客户 / finance 审批与回款）
+        AppAccounts.all().forEach((username, secret) -> realm.addAccount(username, secret[0], secret[1]));
         return realm;
     }
 

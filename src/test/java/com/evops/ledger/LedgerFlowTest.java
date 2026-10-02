@@ -1,6 +1,9 @@
 package com.evops.ledger;
 
 import com.evops.common.BusinessException;
+import com.evops.credit.dto.CustomerCreateRequest;
+import com.evops.credit.entity.Customer;
+import com.evops.credit.service.CustomerService;
 import com.evops.ledger.dto.ActionRequest;
 import com.evops.ledger.dto.OrderCreateRequest;
 import com.evops.ledger.dto.OrderEditRequest;
@@ -22,6 +25,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
@@ -38,6 +42,7 @@ class LedgerFlowTest {
     @Autowired private ReceiptService receiptService;
     @Autowired private SlotBookingMapper slotMapper;
     @Autowired private SchemaVersionService schemaVersionService;
+    @Autowired private CustomerService customerService;
 
     private static int seq = 0;
     private synchronized String uniqueNo(String prefix) {
@@ -55,10 +60,22 @@ class LedgerFlowTest {
         return siteService.register(req);
     }
 
+    /** F5 起上刊强制挂客户：测试客户给足额度，不触发拦截。 */
+    private String newCustomer() {
+        CustomerCreateRequest req = new CustomerCreateRequest();
+        req.setCustomerName(uniqueNo("C"));
+        req.setCreditLimit(new BigDecimal("999999999"));
+        req.setOperatorName("tester");
+        Customer customer = customerService.create(req);
+        return customer.getCustomerNo();
+    }
+
     private OrderCreateRequest postingReq(String siteNo, String creative, LocalDate occurDate) {
         OrderCreateRequest req = new OrderCreateRequest();
         req.setSiteNo(siteNo);
         req.setCreativeName(creative);
+        req.setCustomerNo(newCustomer());
+        req.setOccupyAmount(new BigDecimal("1000"));
         req.setOccurDate(occurDate);
         req.setOperatorName("tester");
         return req;

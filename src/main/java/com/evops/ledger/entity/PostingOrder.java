@@ -7,6 +7,7 @@ import lombok.EqualsAndHashCode;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 
 /**
  * 上刊单（含对冲单）。画面挂在点位上，状态 HUNG 挂起 / TAKEN_DOWN 落架 / OFFSET 已对冲。
@@ -44,5 +45,11 @@ public class PostingOrder extends BaseEntity {
     private String operatorName;
     /** 关闭（落架/对冲）时间 */
     private LocalDateTime closedTime;
+    /** 挂账客户（F5 起必填）：上刊即占用该客户信用额度 */
+    private Long customerId;
+    /** 客户编号随单固化 */
+    private String customerNo;
+    /** 占用金额：该单占用的信用额度，即待结金额 */
+    private BigDecimal occupyAmount;
     private String remark;
 }
