@@ -79,6 +79,7 @@
     <div class="tab" data-tab="asset">⑦ 素材转档</div>
     <div class="tab" data-tab="geo">⑧ 坐标建档与捞点</div>
     <div class="tab" data-tab="rate">⑨ 年度刊例与报价</div>
+    <div class="tab" data-tab="credit">⑩ 客户授信与回款</div>
   </div>
 
   <!-- 点位挂牌 -->
@@ -109,6 +110,7 @@
     <div class="grid">
       <div><label>点位编号 *</label><input id="postSiteNo" placeholder="已挂牌的点位编号"></div>
       <div><label>画面名称 *</label><input id="postCreative" placeholder="如 中秋档主视觉"></div>
+      <div><label>引用报价单号（授信上刊填 QT…，留空为普通单）</label><input id="postQuoteNo" placeholder="QT…"></div>
       <div><label>上刊发生日（决定档期周/归属月）</label><input id="postDate" type="date"></div>
       <div><label>经手人（留空取登录人）</label><input id="postOperator"></div>
       <div class="span2"><label>备注</label><input id="postRemark"></div>
@@ -351,6 +353,85 @@
     <table id="quoteTable"></table>
     <div id="quoteDetail" style="margin-top:8px"></div>
   </div>
+
+  <!-- 客户授信与回款 -->
+  <div class="panel" id="panel-credit">
+    <p class="muted">演示账号：财务/系统 demo、bootstrap（看全部、可审批）；销售 sales1、sales2（只见名下客户，只能申请）。</p>
+
+    <h3>客户建档授信（建档即 v1 生效；客户名须与报价单客户名一致）</h3>
+    <div class="grid">
+      <div><label>客户名称 *</label><input id="crName"></div>
+      <div><label>归属销售（财务可指定，销售默认自己）</label><input id="crOwner" placeholder="sales1"></div>
+      <div><label>信用额度（含税）*</label><input id="crLimit" placeholder="50000.00"></div>
+      <div><label>联系人</label><input id="crContact"></div>
+      <div class="span2"><label>备注</label><input id="crRemark"></div>
+      <div style="align-self:end"><button onclick="createCustomer()">建档授信</button></div>
+    </div>
+
+    <h3>客户翻查（销售只见名下）</h3>
+    <div class="grid">
+      <div><label>客户名（模糊）</label><input id="qCrName"></div>
+      <div><label>状态</label><select id="qCrStatus"><option value="">全部</option><option value="ACTIVE">在档</option><option value="FROZEN">冻结</option></select></div>
+      <div style="align-self:end"><button class="gray" onclick="loadCustomers()">翻查</button></div>
+    </div>
+    <table id="customerTable"></table>
+
+    <h3>额度变更申请（ADJUST 调额 / FREEZE 冻结 / UNFREEZE 解冻，走财务审批）</h3>
+    <div class="grid">
+      <div><label>客户编号 *</label><input id="chgCustNo"></div>
+      <div><label>变更类型 *</label><select id="chgType"><option value="ADJUST">ADJUST 调额</option><option value="FREEZE">FREEZE 冻结</option><option value="UNFREEZE">UNFREEZE 解冻</option></select></div>
+      <div><label>调额后额度（ADJUST 用）</label><input id="chgAfter" placeholder="80000.00"></div>
+      <div class="span2"><label>申请原因</label><input id="chgReason"></div>
+      <div style="align-self:end;display:flex;gap:8px">
+        <button onclick="applyLimit()">提交申请</button>
+        <button class="gray" onclick="loadVersions()">查该户版本</button>
+      </div>
+    </div>
+    <table id="versionTable"></table>
+
+    <h3>财务审批（待审批列表）</h3>
+    <div class="actions">
+      <button class="gray" onclick="loadPending()">刷新待审批</button>
+    </div>
+    <table id="pendingTable"></table>
+    <div class="grid" style="margin-top:8px">
+      <div><label>版本 id</label><input id="apvId"></div>
+      <div class="span2"><label>审批意见</label><input id="apvComment"></div>
+      <div style="align-self:end;display:flex;gap:8px">
+        <button onclick="approveLimit()">通过</button>
+        <button class="warn" onclick="rejectLimit()">驳回</button>
+      </div>
+    </div>
+
+    <h3>回款登记与按单核销（部分回款分次核）</h3>
+    <div class="grid">
+      <div><label>客户编号 *</label><input id="payCustNo"></div>
+      <div><label>实收金额 *</label><input id="payAmount" placeholder="1060.00"></div>
+      <div><label>到账日（留空今天）</label><input id="payDate" type="date"></div>
+      <div><label>银行流水/收据号</label><input id="payVoucher"></div>
+      <div style="align-self:end"><button onclick="registerPayment()">登记回款</button></div>
+    </div>
+    <div class="grid">
+      <div><label>回款凭证号（留空自动挑）</label><input id="woPayNo"></div>
+      <div><label>上刊单号 *</label><input id="woOrderNo"></div>
+      <div><label>本次核销额 *</label><input id="woAmount"></div>
+      <div><label>核销日（留空今天）</label><input id="woDate" type="date"></div>
+      <div style="align-self:end"><button class="gray" onclick="writeoff()">按单核销</button></div>
+    </div>
+
+    <h3>占用 / 应收明细</h3>
+    <div class="grid">
+      <div><label>归属月 yyyy-MM</label><input id="ocPeriod" placeholder="2031-06"></div>
+      <div><label>客户编号</label><input id="ocCustNo"></div>
+      <div><label>占用状态</label><select id="ocStatus"><option value="">全部</option><option value="ACTIVE">占用中</option><option value="RELEASED">已撤刊转应收</option><option value="REVERSED">已对冲</option></select></div>
+      <div><label>核销状态</label><select id="ocSettle"><option value="">全部</option><option value="UNSETTLED">未核销</option><option value="PARTIAL">部分核销</option><option value="SETTLED">已结清</option></select></div>
+      <div style="align-self:end;display:flex;gap:8px">
+        <button class="gray" onclick="loadOccupations()">翻查</button>
+        <button class="gray" onclick="exportOccupation()">导出当月 CSV</button>
+      </div>
+    </div>
+    <table id="occupationTable"></table>
+  </div>
 </div>
 
 <script>
@@ -406,6 +487,7 @@ async function init() {
     t.classList.add('active');
     document.getElementById('panel-' + t.dataset.tab).classList.add('active');
     if (t.dataset.tab === 'rate') { loadRateCards(); }
+    if (t.dataset.tab === 'credit') { loadCustomers(); loadPending(); }
   });
   document.getElementById('calPeriod').value = new Date().toISOString().slice(0, 7);
   try { const me = await call('GET', '/me'); showApp(me.username); loadSites(); loadSpecs(); } catch (e) { showLogin(); }
@@ -437,8 +519,10 @@ async function loadSites() {
 async function createOrder() {
   try {
     const d = await call('POST', '/orders', { siteNo: val('postSiteNo'), creativeName: val('postCreative'),
+      quoteNo: val('postQuoteNo'),
       occurDate: val('postDate'), operatorName: val('postOperator'), remark: val('postRemark') });
-    toast('上刊成功，单号 ' + d.orderNo + '，档期 ' + d.weekStart + ' 至 ' + d.weekEnd + '，归属月 ' + d.bizPeriod, true);
+    toast('上刊成功，单号 ' + d.orderNo + '，档期 ' + d.weekStart + ' 至 ' + d.weekEnd + '，归属月 ' + d.bizPeriod
+      + (d.creditUsed === 1 ? '，已占授信（报价 ' + d.quoteNo + '）' : ''), true);
     document.getElementById('actOrderNo').value = d.orderNo;
   } catch (e) { toast(e.message); }
 }
@@ -1016,6 +1100,118 @@ function renderQuoteDetail(d) {
     + `<tr style="background:#eef4fb;font-weight:600"><td colspan="9">合计（默认含税）</td>
       <td>${money(q.totalExTax)}</td><td>${money(q.totalTax)}</td><td>含税 ${money(q.totalInclTax)}</td></tr></table>`;
   document.getElementById('quoteDetail').innerHTML = head + tbl;
+}
+
+// ===== F5 客户授信与回款 =====
+function crStatusTag(s){ return {ACTIVE:'<span class="tag success">在档</span>',FROZEN:'<span class="tag offset">冻结</span>'}[s]||esc(s); }
+function verTag(s){ return {PENDING:'<span class="tag pending">待审批</span>',EFFECTIVE:'<span class="tag success">生效</span>',REJECTED:'<span class="tag down">已驳回</span>',SUPERSEDED:'<span class="tag">已取代</span>'}[s]||esc(s); }
+function chgTag(s){ return {INITIAL:'建档授信',ADJUST:'额度调整',FREEZE:'冻结',UNFREEZE:'解冻'}[s]||esc(s); }
+function occTag(s){ return {ACTIVE:'<span class="tag hung">占用中</span>',RELEASED:'<span class="tag down">撤刊转应收</span>',REVERSED:'<span class="tag offset">已对冲</span>'}[s]||esc(s); }
+function settleTag(s){ return {UNSETTLED:'未核销',PARTIAL:'<span class="tag pending">部分核销</span>',SETTLED:'<span class="tag success">已结清</span>'}[s]||esc(s); }
+function pickCust(no){ document.getElementById('chgCustNo').value=no; document.getElementById('payCustNo').value=no; toast('已填客户编号 '+no,true); }
+
+async function createCustomer(){
+  try{
+    await call('POST','/credit/customers',{ customerName:val('crName'), ownerSales:val('crOwner'),
+      creditLimit:val('crLimit'), contactName:val('crContact'), remark:val('crRemark') });
+    toast('客户建档授信成功',true); loadCustomers();
+    ['crName','crOwner','crLimit','crContact','crRemark'].forEach(i=>document.getElementById(i).value='');
+  }catch(e){ toast(e.message); }
+}
+async function loadCustomers(){
+  try{
+    const list=await call('GET','/credit/customers?keyword='+encodeURIComponent(val('qCrName')||'')
+      +'&status='+encodeURIComponent(val('qCrStatus')||''));
+    document.getElementById('customerTable').innerHTML=
+      '<tr><th>客户编号</th><th>客户名称</th><th>归属销售</th><th>额度</th><th>已占用</th><th>可用</th><th>状态</th><th>当前版本</th></tr>'
+      + list.map(c=>`<tr><td><a href="javascript:void(0)" onclick="pickCust('${esc(c.customerNo)}')">${esc(c.customerNo)}</a></td>
+        <td>${esc(c.customerName)}</td><td>${esc(c.ownerSales)}</td>
+        <td>${money(c.creditLimit)}</td><td>${money(c.occupiedAmount)}</td>
+        <td><b>${money((c.creditLimit-c.occupiedAmount).toFixed(2))}</b></td>
+        <td>${crStatusTag(c.creditStatus)}</td><td>v${c.currentVersionNo}</td></tr>`).join('')
+      || '<tr><td class="muted">没有客户</td></tr>';
+  }catch(e){ toast(e.message); }
+}
+async function applyLimit(){
+  try{
+    const no=val('chgCustNo'); if(!no){ toast('请填客户编号'); return; }
+    await call('POST','/credit/customers/'+encodeURIComponent(no)+'/applications',
+      { changeType:val('chgType'), afterLimit:val('chgAfter'), reason:val('chgReason') });
+    toast('额度变更申请已提交，待财务审批',true); loadVersions(); loadPending();
+  }catch(e){ toast(e.message); }
+}
+async function loadVersions(){
+  const no=val('chgCustNo'); if(!no){ toast('请填客户编号'); return; }
+  try{
+    const vs=await call('GET','/credit/customers/'+encodeURIComponent(no)+'/versions');
+    document.getElementById('versionTable').innerHTML=
+      '<tr><th>版本</th><th>类型</th><th>前额度</th><th>后额度</th><th>前状态</th><th>后状态</th><th>状态</th><th>申请人</th><th>审批人</th><th>意见</th></tr>'
+      + vs.map(v=>`<tr><td>v${v.versionNo}</td><td>${chgTag(v.changeType)}</td>
+        <td>${v.beforeLimit==null?'-':money(v.beforeLimit)}</td><td>${v.afterLimit==null?'-':money(v.afterLimit)}</td>
+        <td>${v.beforeStatus||'-'}</td><td>${v.afterStatus||'-'}</td><td>${verTag(v.status)}</td>
+        <td>${esc(v.applicantName)}</td><td>${esc(v.approverName)||'-'}</td><td>${esc(v.approveComment)||''}</td></tr>`).join('');
+  }catch(e){ toast(e.message); }
+}
+async function loadPending(){
+  try{
+    const vs=await call('GET','/credit/limit-versions/pending');
+    document.getElementById('pendingTable').innerHTML=
+      '<tr><th>id</th><th>客户</th><th>版本</th><th>类型</th><th>前额度</th><th>后额度</th><th>后状态</th><th>申请人</th><th>原因</th></tr>'
+      + vs.map(v=>`<tr><td><a href="javascript:void(0)" onclick="document.getElementById('apvId').value=${v.id}">${v.id}</a></td>
+        <td>${v.customerId}</td><td>v${v.versionNo}</td><td>${chgTag(v.changeType)}</td>
+        <td>${v.beforeLimit==null?'-':money(v.beforeLimit)}</td><td>${v.afterLimit==null?'-':money(v.afterLimit)}</td>
+        <td>${v.afterStatus||'-'}</td><td>${esc(v.applicantName)}</td><td>${esc(v.applyReason)||''}</td></tr>`).join('')
+      || '<tr><td class="muted">没有待审批</td></tr>';
+  }catch(e){ toast(e.message); }
+}
+async function approveLimit(){
+  try{
+    const id=val('apvId'); if(!id){ toast('请填版本 id'); return; }
+    await call('POST','/credit/limit-versions/'+id+'/approve',{ comment:val('apvComment') });
+    toast('审批通过',true); loadPending(); loadCustomers();
+  }catch(e){ toast(e.message); }
+}
+async function rejectLimit(){
+  try{
+    const id=val('apvId'); if(!id){ toast('请填版本 id'); return; }
+    await call('POST','/credit/limit-versions/'+id+'/reject',{ comment:val('apvComment') });
+    toast('已驳回',true); loadPending();
+  }catch(e){ toast(e.message); }
+}
+async function registerPayment(){
+  try{
+    await call('POST','/credit/payments',{ customerNo:val('payCustNo'), receivedAmount:val('payAmount'),
+      receivedDate:val('payDate'), voucherNo:val('payVoucher') });
+    toast('回款登记成功',true);
+    ['payAmount','payDate','payVoucher'].forEach(i=>document.getElementById(i).value='');
+  }catch(e){ toast(e.message); }
+}
+async function writeoff(){
+  try{
+    const d=await call('POST','/credit/write-offs',{ paymentNo:val('woPayNo'), orderNo:val('woOrderNo'),
+      amount:val('woAmount'), writeoffDate:val('woDate') });
+    toast('核销成功，凭证 '+d.payment.paymentNo+' 状态 '+d.payment.status,true); loadOccupations();
+  }catch(e){ toast(e.message); }
+}
+async function loadOccupations(){
+  try{
+    const q='?customerNo='+encodeURIComponent(val('ocCustNo')||'')+'&period='+encodeURIComponent(val('ocPeriod')||'')
+      +'&status='+encodeURIComponent(val('ocStatus')||'')+'&settleStatus='+encodeURIComponent(val('ocSettle')||'');
+    const list=await call('GET','/credit/occupations'+q);
+    document.getElementById('occupationTable').innerHTML=
+      '<tr><th>归属月</th><th>客户</th><th>上刊单</th><th>报价单</th><th>点位</th><th>金额</th><th>已核销</th><th>未核销</th><th>占用状态</th><th>核销状态</th></tr>'
+      + list.map(o=>`<tr><td>${esc(o.bizPeriod)}</td><td>${esc(o.customerName)}</td>
+        <td>${esc(o.orderNo)}</td><td>${esc(o.quoteNo)}</td><td>${esc(o.siteNo)}</td>
+        <td>${money(o.amount)}</td><td>${money(o.settledAmount)}</td>
+        <td><b>${money((o.amount-o.settledAmount).toFixed(2))}</b></td>
+        <td>${occTag(o.status)}</td><td>${settleTag(o.settleStatus)}</td></tr>`).join('')
+      || '<tr><td class="muted">没有占用记录</td></tr>';
+  }catch(e){ toast(e.message); }
+}
+function exportOccupation(){
+  const p=val('ocPeriod');
+  if(!p){ toast('请填归属月 yyyy-MM'); return; }
+  window.open('/api/credit/reports/occupation/export?period='+encodeURIComponent(p),'_blank');
 }
 
 init();

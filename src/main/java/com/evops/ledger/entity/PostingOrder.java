@@ -39,6 +39,14 @@ public class PostingOrder extends BaseEntity {
     private String status;
     /** 单据版本，每次留痕改动 +1 */
     private Integer versionNo;
+    /** 引用的报价单号：有值=授信上刊单，客户与含税占用额从报价单快照取；空=普通单不占额度 */
+    private String quoteNo;
+    /** 授信客户 id（授信单） */
+    private Long customerId;
+    /** 授信占用金额（报价含税总额快照） */
+    private java.math.BigDecimal occupiedAmount;
+    /** 是否占用授信：1 是 / 0 否 */
+    private Integer creditUsed;
     private String offsetReason;
     /** 开单经手人 */
     private String operatorName;

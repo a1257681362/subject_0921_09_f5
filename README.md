@@ -20,7 +20,7 @@
 - **外部回执**：挂回原单据；回执指向对冲单时自动回溯到根单。
 - **月度档期周历**：`/api/ledger/calendar?period=yyyy-MM` 一眼看哪块屏哪周空着。
 
-账号：演示账号 `demo / demo`，骨架账号 `bootstrap / bootstrap`。
+账号：演示账号 `demo / demo`，骨架账号 `bootstrap / bootstrap`（均为财务/系统视角，看全部客户、可审批）；F5 销售账号 `sales1 / sales1`、`sales2 / sales2`（只见名下客户），财务账号 `finance1 / finance1`。
 
 ## F2：素材流水与多规格转档（f2-asset-transcode-1）
 
@@ -67,6 +67,23 @@
 - **计价逻辑收到一处**：所有金额只由 `PricingEngine.price(提交日, 报价行)` 算出，报价提交与报价试算共用，接口层不算一分钱。
 - **财务随查随拉的阶梯对照表**：`GET /api/rate-cards/years/{year}` 拉年度当前版本的档位+点位价全量；`.../tiers/export` 导出 CSV（带 BOM，含年份、版本、状态、税率、周数区间、档位比例、中文折扣）。
 
+## F5：客户授信与回款核销（f5-credit-1）
+
+老客户先上刊后结钱是行规，但额度和回款不记销售小本本——全部落在 evops-base，授信与回款凭证串成一条账。
+
+业务口径：
+
+- **客户建档给信用额度**：客户名全局唯一、与报价单上的客户名精确对应；建档即记 v1 直接生效（前值 0），归属销售决定数据隔离边界。
+- **上刊凭报价单占用、撤刊释放**：上刊单填已提交报价单号 `quoteNo` 即为授信单——客户与**含税占用额从报价单快照取**（金额仍只由 `PricingEngine` 一处算出）；报价必须是单行（单点单周，与上刊单一致，多行请拆单），**一张报价单最多背一张上刊单**。不填报价单号是普通单，不占额度，流程与 F1 完全一致。
+- **余额不足拦在提交口**：占用走数据库原子条件更新（在档 且 占用+本次 ≤ 额度），并发超额也由它兜底；冻结户不能新占用。占用失败单据与档期整体回滚，不留半截。
+- **撤刊即释放，转应收**：落架撤刊立即把未核销部分还回可用额度，占用行置 `RELEASED` 转应收继续跟踪；**对冲属更正，释放额度但不转应收**（`REVERSED`，不能再核销）；已有回款核销的单禁止直接对冲。
+- **回款登记后按单核销，部分回款分次核**：先登记回款凭证（实收额），再按上刊单核销；一笔回款可分次核多张单、一张单也可被多笔回款分次核销。回款已核不超实收、单据已核不超单据额，都走条件更新防核穿。**挂起期间回款核销等额实时释放占用**；撤刊转应收后的核销只结应收、不动额度。
+- **额度动一动走审批，前后值都留着**：建档之后调额 `ADJUST`、冻结 `FREEZE`、解冻 `UNFREEZE` 一律先进 `PENDING`，财务审批后才 `EFFECTIVE`（客户落新值、上一生效版置 `SUPERSEDED`），驳回置 `REJECTED` 客户不变；版本里前额度/后额度、前状态/后状态、申请人/审批人全留。申请人不能审批自己（职责分离）；下调额度不得低于当前在额占用。
+- **月底财务拉每户占用明细**：`GET /api/credit/reports/occupation?period=yyyy-MM` 按固化归属期间拉每户每单，`.../export` 导出 CSV（带 BOM，含占用/已核销/未核销、占用与核销状态）。
+- **销售只能看自己名下客户**：`Viewer` 统一隔离——销售（sales 角色）查询/申请/上刊/回款都限名下客户，财务/系统（finance、system 角色）看全部并可审批。
+
+信用额度模块：客户档案（额度、在额占用、可用额度）；信用额度版本（建档/调额/冻结/解冻，前后值、申请审批留痕）；信用额度状态（`ACTIVE 在档 / FROZEN 冻结`）。
+
 ## 接口一览（均在 /api 下，除 health/login 外需登录）
 
 | 动作 | 接口 |
@@ -90,14 +107,20 @@
 | 刊例版本：草稿配置 / 详情 / 发布 / 作废 | `PUT /api/rate-cards/versions/{versionId}`、`GET /api/rate-cards/versions/{versionId}`、`POST .../publish`、`POST .../revoke` |
 | 财务阶梯对照表 / 导出 CSV | `GET /api/rate-cards/years/{year}`、`GET /api/rate-cards/years/{year}/tiers/export` |
 | 报价：试算 / 提交 / 详情 / 翻查 | `POST /api/quotes/preview`、`POST /api/quotes`、`GET /api/quotes/{quoteNo}`、`GET /api/quotes?customerName=&rateYear=&from=&to=` |
+| 客户建档授信 / 翻查 / 详情 / 额度版本 | `POST /api/credit/customers`、`GET /api/credit/customers?keyword=&status=`、`GET /api/credit/customers/{customerNo}`、`GET /api/credit/customers/{customerNo}/versions` |
+| 额度变更：申请 / 待审批 / 通过 / 驳回 | `POST /api/credit/customers/{customerNo}/applications`、`GET /api/credit/limit-versions/pending`、`POST /api/credit/limit-versions/{id}/approve`、`POST .../reject` |
+| 回款登记 / 翻查 / 详情 / 按单核销 | `POST /api/credit/payments`、`GET /api/credit/payments?customerNo=&from=&to=`、`GET /api/credit/payments/{paymentNo}`、`POST /api/credit/write-offs` |
+| 占用应收明细 / 月末占用报表 / 导出 CSV | `GET /api/credit/occupations?customerNo=&period=&status=&settleStatus=`、`GET /api/credit/reports/occupation?period=yyyy-MM`、`GET /api/credit/reports/occupation/export?period=` |
 
-演示界面：启动后浏览器打开根路径 `/`（周例会演示用，九个页签覆盖全流程）。
+授信上刊仍走上刊接口 `POST /api/orders`，请求体带 `quoteNo`（引用已提交报价单）即为授信单；落架/对冲接口不变，撤刊即释放额度。
+
+演示界面：启动后浏览器打开根路径 `/`（周例会演示用，十个页签覆盖全流程）。
 
 ## 启动
 
 1. 执行 `mvn -q -DskipTests compile` 验证骨架构建。
 2. 执行 `mvn spring-boot:run` 启动应用；Spring Boot 会自动执行 `src/main/resources/schema.sql`。
 3. H2 数据文件默认写入工作区 `data/evops`。如需修改路径，编辑 `application.yml` 中的 `jdbc:h2:file:` 连接串。
-4. 验证：`mvn test`（11 项底账口径测试 + 7 项素材转档测试 + 8 项坐标建档测试 + 13 项年度刊例计价测试，独立内存 H2）。
+4. 验证：`mvn test`（11 项底账口径测试 + 7 项素材转档测试 + 8 项坐标建档测试 + 13 项年度刊例计价测试 + 13 项客户授信回款测试，独立内存 H2）。
 
 表结构交付副本：`docs/schema/evops.sql`（容器内根目录 `../../docs/schema` 不可写，交付副本置于工作区内），应与 `src/main/resources/schema.sql` 保持一致。

@@ -24,6 +24,11 @@ public class ShiroConfig {
         realm.addAccount("bootstrap", "bootstrap", "system");
         // 周例会演示账号
         realm.addAccount("demo", "demo", "system");
+        // F5：财务（可审批额度、看全部客户）
+        realm.addAccount("finance1", "finance1", "finance");
+        // F5：销售（只能看/操作自己名下客户，只能提交额度申请）
+        realm.addAccount("sales1", "sales1", "sales");
+        realm.addAccount("sales2", "sales2", "sales");
         return realm;
     }
 

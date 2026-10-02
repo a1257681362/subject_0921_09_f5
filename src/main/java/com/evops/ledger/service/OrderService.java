@@ -20,9 +20,11 @@ import com.evops.ledger.mapper.PostingOrderMapper;
 import com.evops.ledger.mapper.SiteMapper;
 import com.evops.ledger.mapper.SlotBookingMapper;
 import com.evops.ledger.support.Operators;
+import com.evops.ledger.support.PostingCreditGateway;
 import com.evops.ledger.support.WeekRanges;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -45,16 +47,20 @@ public class OrderService {
     private final OrderReceiptMapper receiptMapper;
     private final SiteMapper siteMapper;
     private final ObjectMapper objectMapper;
+    /** 授信域可选实现：无授信模块时取不到，上刊流程与 F1 完全一致（普通单不占额度） */
+    private final ObjectProvider<PostingCreditGateway> creditGatewayProvider;
 
     public OrderService(PostingOrderMapper orderMapper, SlotBookingMapper slotMapper,
                         OrderEventMapper eventMapper, OrderReceiptMapper receiptMapper,
-                        SiteMapper siteMapper, ObjectMapper objectMapper) {
+                        SiteMapper siteMapper, ObjectMapper objectMapper,
+                        ObjectProvider<PostingCreditGateway> creditGatewayProvider) {
         this.orderMapper = orderMapper;
         this.slotMapper = slotMapper;
         this.eventMapper = eventMapper;
         this.receiptMapper = receiptMapper;
         this.siteMapper = siteMapper;
         this.objectMapper = objectMapper;
+        this.creditGatewayProvider = creditGatewayProvider;
     }
 
     /** 上刊：单号唯一、按周占档（同点位同周冲突拒绝）、归属月按发生日固化。 */
@@ -82,6 +88,8 @@ public class OrderService {
         order.setBizPeriod(WeekRanges.periodOf(occurDate));
         order.setStatus(LedgerEnums.ORDER_HUNG);
         order.setVersionNo(1);
+        // 默认普通单不占授信；引用报价单时由授信网关回写为 1（显式置 0，避免只靠库默认值导致实体为 null）
+        order.setCreditUsed(0);
         order.setOperatorName(operator);
         order.setRemark(request.getRemark());
         try {
@@ -95,8 +103,18 @@ public class OrderService {
 
         occupySlot(site.getId(), weekStart, weekEnd, order);
 
+        // 引用报价单即为授信单：提交口校验并占用客户额度，余额不足/冻结直接整体回滚（单据、档期都不落）
+        if (request.getQuoteNo() != null && !request.getQuoteNo().trim().isEmpty()) {
+            PostingCreditGateway gateway = creditGatewayProvider.getIfAvailable();
+            if (gateway == null) {
+                throw new BusinessException("授信模块未启用，不能引用报价单占用额度");
+            }
+            gateway.occupyFor(order, request.getQuoteNo(), operator);
+        }
+
         recordEvent(order, LedgerEnums.EVENT_CREATE, occurDate, operator, null,
-                "开单上刊，画面「" + order.getCreativeName() + "」挂起");
+                "开单上刊，画面「" + order.getCreativeName() + "」挂起"
+                        + (order.getQuoteNo() != null ? "，授信占用报价单 " + order.getQuoteNo() : ""));
         return order;
     }
 
@@ -112,6 +130,8 @@ public class OrderService {
         order.setClosedTime(LocalDateTime.now());
         orderMapper.updateById(order);
         releaseSlot(order);
+        // 授信单落架：撤刊即释放额度，未核销额转应收继续按单核销；普通单无占用行，内部直接跳过
+        releaseCredit(order, false, operator);
         recordEvent(order, LedgerEnums.EVENT_TAKE_DOWN, occurDate, operator, null,
                 request.getReason() != null ? request.getReason() : "画面落架");
         return order;
@@ -135,6 +155,8 @@ public class OrderService {
         original.setClosedTime(LocalDateTime.now());
         orderMapper.updateById(original);
         releaseSlot(original);
+        // 授信单对冲：释放额度但属更正，不形成应收（REVERSED）；已有回款核销的单禁止对冲
+        releaseCredit(original, true, operator);
         recordEvent(original, LedgerEnums.EVENT_OFFSET, occurDate, operator, null,
                 "原单已对冲，补对冲单，原因：" + reason);
 
@@ -343,6 +365,17 @@ public class OrderService {
                 .eq(SlotBooking::getOrderId, order.getId())
                 .eq(SlotBooking::getStatus, LedgerEnums.SLOT_ACTIVE)
                 .set(SlotBooking::getStatus, LedgerEnums.SLOT_RELEASED));
+    }
+
+    /** 授信单撤刊/对冲释放额度；普通单或授信模块缺失时不做任何事，保持 F1 原行为。 */
+    private void releaseCredit(PostingOrder order, boolean reversed, String operator) {
+        PostingCreditGateway gateway = creditGatewayProvider.getIfAvailable();
+        if (gateway == null) {
+            return;
+        }
+        if (order.getCreditUsed() != null && order.getCreditUsed() == 1) {
+            gateway.releaseFor(order, reversed, operator);
+        }
     }
 
     private void recordEvent(PostingOrder order, String eventType, LocalDate occurDate,
